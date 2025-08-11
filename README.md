@@ -5,6 +5,7 @@ A fast-paced first-person shooter game built with React, TypeScript, and HTML5 C
 ## 🎮 Features
 
 - **Smooth FPS Gameplay**: 60fps browser-based first-person shooter
+- **Dust2-Inspired Map**: Navigate basic walls and corridors reminiscent of CS:GO's Dust2
 - **Progressive Difficulty**: Waves get harder with more and faster enemies
 - **Local Leaderboard**: Track your high scores locally
 - **Immersive Audio**: Synthesized sound effects powered by the Web Audio API

@@ -1,6 +1,26 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { ArrowLeft } from 'lucide-react';
 
+type Wall = { x1: number; z1: number; x2: number; z2: number };
+
+// Very rough approximation of Counter‑Strike's Dust2 layout using simple
+// rectangular segments in the XZ plane. The coordinates are kept small so the
+// player can traverse the whole map quickly.
+const createDust2Layout = (): Wall[] => [
+  // Outer boundary box
+  { x1: -40, z1: -40, x2: 40, z2: -35 },
+  { x1: -40, z1: 35, x2: 40, z2: 40 },
+  { x1: -40, z1: -40, x2: -35, z2: 40 },
+  { x1: 35, z1: -40, x2: 40, z2: 40 },
+  // Long corridor
+  { x1: -5, z1: -40, x2: 5, z2: 0 },
+  // Mid branches
+  { x1: -5, z1: 0, x2: -35, z2: 10 },
+  { x1: 5, z1: 0, x2: 35, z2: 10 },
+  // Lower connector
+  { x1: -5, z1: 10, x2: 5, z2: 40 },
+];
+
 interface FPSShooterGameProps {
   onBackToMenu: () => void;
 }
@@ -83,6 +103,14 @@ const FPSShooterGame: React.FC<FPSShooterGameProps> = ({ onBackToMenu }) => {
   // Helper: random
   const rand = (min: number, max: number) => Math.random() * (max - min) + min;
 
+  const inWall = (x: number, z: number, r = 0.6) => {
+    const s = stateRef.current;
+    if (!s) return false;
+    return s.walls.some((w: Wall) =>
+      x + r > w.x1 && x - r < w.x2 && z + r > w.z1 && z - r < w.z2
+    );
+  };
+
   const resetGame = () => {
     setScore(0);
     setHealth(100);
@@ -104,6 +132,7 @@ const FPSShooterGame: React.FC<FPSShooterGameProps> = ({ onBackToMenu }) => {
       // Enemies are simple billboards in XZ plane
       enemies: [],
       spawnCd: 0,
+      walls: createDust2Layout(),
       worldSize: 60, // half-size bounds
       fov: (75 * Math.PI) / 180,
       recoil: 0,
@@ -117,10 +146,14 @@ const FPSShooterGame: React.FC<FPSShooterGameProps> = ({ onBackToMenu }) => {
     const s = stateRef.current;
     if (!s) return;
     for (let i = 0; i < count; i++) {
-      const dist = rand(12, 35);
-      const angle = s.player.yaw + rand(-0.7, 0.7);
-      const ex = s.player.x + Math.sin(angle) * dist;
-      const ez = s.player.z + Math.cos(angle) * dist;
+      let ex = 0, ez = 0, attempts = 0;
+      do {
+        const dist = rand(12, 35);
+        const angle = s.player.yaw + rand(-0.7, 0.7);
+        ex = s.player.x + Math.sin(angle) * dist;
+        ez = s.player.z + Math.cos(angle) * dist;
+        attempts++;
+      } while (inWall(ex, ez) && attempts < 10);
       s.enemies.push({ x: ex, z: ez, r: 0.6, hp: 1, vx: rand(-0.5, 0.5), vz: rand(-0.5, 0.5) });
     }
   };
@@ -259,11 +292,26 @@ const FPSShooterGame: React.FC<FPSShooterGameProps> = ({ onBackToMenu }) => {
       if (len > 0) { fx /= len; fz /= len; }
       // Rotate into world space
       const sin = Math.sin(p.yaw), cos = Math.cos(p.yaw);
-      p.x += (sin * fz + cos * fx) * accel * dt;
-      p.z += (cos * fz - sin * fx) * accel * dt;
+      const radius = 0.6;
+      let nx = p.x + (sin * fz + cos * fx) * accel * dt;
+      let nz = p.z + (cos * fz - sin * fx) * accel * dt;
       // Clamp to world
-      p.x = Math.max(-s.worldSize, Math.min(s.worldSize, p.x));
-      p.z = Math.max(-s.worldSize, Math.min(s.worldSize, p.z));
+      nx = Math.max(-s.worldSize, Math.min(s.worldSize, nx));
+      nz = Math.max(-s.worldSize, Math.min(s.worldSize, nz));
+      // Wall collisions
+      for (const w of s.walls as Wall[]) {
+        if (nx + radius > w.x1 && nx - radius < w.x2 && nz + radius > w.z1 && nz - radius < w.z2) {
+          const overlapX = Math.min(w.x2 - (nx - radius), (nx + radius) - w.x1);
+          const overlapZ = Math.min(w.z2 - (nz - radius), (nz + radius) - w.z1);
+          if (overlapX < overlapZ) {
+            nx += nx < (w.x1 + w.x2) / 2 ? -overlapX : overlapX;
+          } else {
+            nz += nz < (w.z1 + w.z2) / 2 ? -overlapZ : overlapZ;
+          }
+        }
+      }
+      p.x = nx;
+      p.z = nz;
 
       // Enemies simple drift towards player
       for (const e of s.enemies) {
@@ -271,8 +319,12 @@ const FPSShooterGame: React.FC<FPSShooterGameProps> = ({ onBackToMenu }) => {
         const dx = p.x - e.x, dz = p.z - e.z;
         const d = Math.hypot(dx, dz) + 1e-6;
         const speed = 2 + Math.min(5, wave * 0.3);
-        e.x += (dx / d) * speed * dt + e.vx * dt;
-        e.z += (dz / d) * speed * dt + e.vz * dt;
+        let ex = e.x + (dx / d) * speed * dt + e.vx * dt;
+        let ez = e.z + (dz / d) * speed * dt + e.vz * dt;
+        if (!inWall(ex, ez, e.r)) {
+          e.x = ex;
+          e.z = ez;
+        }
         // Collision with player
         if (d < 1.2) {
           setHealth((h) => Math.max(0, h - 25));
@@ -351,11 +403,45 @@ const FPSShooterGame: React.FC<FPSShooterGameProps> = ({ onBackToMenu }) => {
       }
       ctx.globalAlpha = 1;
 
-      // Project & draw enemies as billboards
       const p = s.player;
       const f = 1 / Math.tan(s.fov / 2);
       const centerX = W / 2;
       const groundY = H / 2; // horizon
+
+      // Draw map walls (very simple vertical quads)
+      const wallTop = groundY - H / 2;
+      const wallSurfaces = (s.walls as Wall[]).map((w) => {
+        const rx1 = w.x1 - p.x;
+        const rz1 = w.z1 - p.z;
+        const rx2 = w.x2 - p.x;
+        const rz2 = w.z2 - p.z;
+        const cx1 = Math.cos(p.yaw) * rx1 - Math.sin(p.yaw) * rz1;
+        const cz1 = Math.cos(p.yaw) * rz1 + Math.sin(p.yaw) * rx1;
+        const cx2 = Math.cos(p.yaw) * rx2 - Math.sin(p.yaw) * rz2;
+        const cz2 = Math.cos(p.yaw) * rz2 + Math.sin(p.yaw) * rx2;
+        const dist = Math.min(cz1, cz2);
+        return { cx1, cz1, cx2, cz2, dist };
+      }).sort((a, b) => b.dist - a.dist);
+
+      for (const { cx1, cz1, cx2, cz2 } of wallSurfaces) {
+        const EPS = 0.01;
+        const z1 = Math.max(cz1, EPS);
+        const z2 = Math.max(cz2, EPS);
+        const sx1 = centerX + (cx1 / z1) * f * centerX;
+        const sx2 = centerX + (cx2 / z2) * f * centerX;
+        ctx.fillStyle = '#c2b280';
+        ctx.strokeStyle = '#4a4a4a';
+        ctx.beginPath();
+        ctx.moveTo(sx1, groundY);
+        ctx.lineTo(sx2, groundY);
+        ctx.lineTo(sx2, wallTop);
+        ctx.lineTo(sx1, wallTop);
+        ctx.closePath();
+        ctx.fill();
+        ctx.stroke();
+      }
+
+      // Project & draw enemies as billboards
 
       // Sort by distance back-to-front for proper overlap
       const sorted = [...s.enemies].sort((a: any, b: any) => {
