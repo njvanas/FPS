@@ -16,6 +16,44 @@ const FPSShooterGame: React.FC<FPSShooterGameProps> = ({ onBackToMenu }) => {
   // Internal mutable game state stored in refs to avoid rerenders
   const stateRef = useRef<any>(null);
   const rafRef = useRef<number>(0);
+  const audioRef = useRef<AudioContext | null>(null);
+
+  const ensureAudio = () => {
+    if (!audioRef.current) {
+      const Ctx = window.AudioContext || (window as any).webkitAudioContext;
+      audioRef.current = new Ctx();
+    }
+    audioRef.current.resume();
+  };
+
+  const playShootSound = () => {
+    ensureAudio();
+    const ctx = audioRef.current!;
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.type = 'square';
+    osc.frequency.setValueAtTime(880, ctx.currentTime);
+    osc.frequency.exponentialRampToValueAtTime(440, ctx.currentTime + 0.05);
+    gain.gain.setValueAtTime(0.2, ctx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.1);
+    osc.connect(gain).connect(ctx.destination);
+    osc.start();
+    osc.stop(ctx.currentTime + 0.1);
+  };
+
+  const playDamageSound = () => {
+    ensureAudio();
+    const ctx = audioRef.current!;
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.type = 'sawtooth';
+    osc.frequency.setValueAtTime(200, ctx.currentTime);
+    gain.gain.setValueAtTime(0.25, ctx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.2);
+    osc.connect(gain).connect(ctx.destination);
+    osc.start();
+    osc.stop(ctx.currentTime + 0.2);
+  };
 
   // Save score to leaderboard
   const saveScore = (finalScore: number, finalWave: number) => {
@@ -170,6 +208,7 @@ const FPSShooterGame: React.FC<FPSShooterGameProps> = ({ onBackToMenu }) => {
     const shoot = () => {
       const s = stateRef.current;
       if (!s || !s.alive) return false;
+      playShootSound();
       // Ray from player in yaw direction; pick closest enemy within small angular threshold & unobstructed (no walls here)
       const px = s.player.x, pz = s.player.z, yaw = s.player.yaw;
       let bestIdx = -1;
@@ -238,6 +277,7 @@ const FPSShooterGame: React.FC<FPSShooterGameProps> = ({ onBackToMenu }) => {
         if (d < 1.2) {
           setHealth((h) => Math.max(0, h - 25));
           s.damageOverlay = 1;
+          playDamageSound();
           // knock back enemy a little
           e.x -= (dx / d) * 2;
           e.z -= (dz / d) * 2;
@@ -446,6 +486,7 @@ const FPSShooterGame: React.FC<FPSShooterGameProps> = ({ onBackToMenu }) => {
   const handleCanvasClick = () => {
     const s = stateRef.current;
     if (!s) return;
+    ensureAudio();
     if (!s.mouseLocked) {
       lockPointer();
     } else if (s.alive) {

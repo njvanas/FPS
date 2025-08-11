@@ -7,6 +7,7 @@ A fast-paced first-person shooter game built with React, TypeScript, and HTML5 C
 - **Smooth FPS Gameplay**: 60fps browser-based first-person shooter
 - **Progressive Difficulty**: Waves get harder with more and faster enemies
 - **Local Leaderboard**: Track your high scores locally
+- **Immersive Audio**: Synthesized sound effects powered by the Web Audio API
 - **Responsive Design**: Works on desktop and mobile devices
 - **Modern UI**: Clean, professional interface with Tailwind CSS
 - **Zero Installation**: Play directly in your browser
@@ -96,13 +97,10 @@ src/
 ## 🔧 Configuration
 
 ### GitHub Pages Setup
-The `vite.config.ts` is pre-configured for GitHub Pages deployment. Update the `base` path if your repository name is different:
+The `vite.config.ts` is pre-configured for GitHub Pages deployment. The base path is derived automatically from the repository name during CI builds. To override it manually (for example for a custom domain or subdirectory), set the `BASE_PATH` environment variable before building:
 
-```typescript
-export default defineConfig({
-  base: '/your-repo-name/',
-  // ... other config
-})
+```bash
+BASE_PATH=/custom-path/ npm run build
 ```
 
 ## 📱 Browser Compatibility
